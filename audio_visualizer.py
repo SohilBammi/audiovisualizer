@@ -53,44 +53,33 @@ waveform_amplitude = np.mean(np.abs(frame_amplitudes), axis=0)
 def make_frame(t):
     frame_idx = int(t * FPS)
     bass, mid, treble = get_energies(frame_idx)
-    amp = waveform_amplitude[frame_idx] if frame_idx < len(waveform_amplitude) else 0
 
     img = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
     scale = lambda v: int(np.clip(v * 0.015, 0, 1) * 250)
 
+    # Radii based on frequency energy
     bass_radius = scale(bass) + 50
     mid_radius = bass_radius + scale(mid)
     treb_radius = mid_radius + scale(treble)
 
-    bass_color = (60, 60, 255)
-    mid_color = (60, 255, 60)
-    treb_color = (255, 60, 255)
+    # Color layers (BGR format)
+    bass_color = (60, 60, 255)   # Reddish
+    mid_color = (60, 255, 60)    # Green
+    treb_color = (255, 60, 255)  # Magenta
 
     def draw_filled_circle(img, center, radius, color, alpha):
         overlay = img.copy()
         cv2.circle(overlay, center, radius, color, thickness=-1)
         return cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
 
+    # Draw concentric circles from outermost to innermost for layering
     img = draw_filled_circle(img, CENTER, treb_radius, treb_color, 0.25)
     img = draw_filled_circle(img, CENTER, mid_radius, mid_color, 0.4)
     img = draw_filled_circle(img, CENTER, bass_radius, bass_color, 0.6)
 
+    # Optional glow around everything
     glow_radius = treb_radius + 20
     img = draw_filled_circle(img, CENTER, glow_radius, (100, 100, 255), 0.08)
-
-    wave_y = int(HEIGHT * 0.85)
-    wave_scale = 300
-    step = WIDTH // 100
-    for i in range(1, 100):
-        if frame_idx - i < 0 or frame_idx - i - 1 < 0:
-            continue
-        amp1 = waveform_amplitude[frame_idx - i] * wave_scale
-        amp2 = waveform_amplitude[frame_idx - i - 1] * wave_scale
-        x1 = WIDTH - i * step
-        x2 = WIDTH - (i + 1) * step
-        y1 = wave_y - int(amp1)
-        y2 = wave_y - int(amp2)
-        cv2.line(img, (x1, y1), (x2, y2), (180, 180, 255), thickness=2)
 
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
