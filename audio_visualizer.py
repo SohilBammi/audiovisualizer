@@ -50,38 +50,54 @@ frame_amplitudes = librosa.util.frame(y, frame_length=samples_per_frame, hop_len
 waveform_amplitude = np.mean(np.abs(frame_amplitudes), axis=0)
 
 # === Frame Generator ===
+# Persistent state to hold previous energies
+prev_bass, prev_mid, prev_treb = 0, 0, 0
+alpha = 0.15  # smoothing factor
+
 def make_frame(t):
+    global prev_bass, prev_mid, prev_treb
+
     frame_idx = int(t * FPS)
-    bass, mid, treble = get_energies(frame_idx)
+    raw_bass, raw_mid, raw_treb = get_energies(frame_idx)
 
-    img = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    # === Smooth the energy for stable motion
+    bass = alpha * raw_bass + (1 - alpha) * prev_bass
+    mid = alpha * raw_mid + (1 - alpha) * prev_mid
+    treb = alpha * raw_treb + (1 - alpha) * prev_treb
+    prev_bass, prev_mid, prev_treb = bass, mid, treb
+
+    # === Create a dark background that pulses slightly with bass
+    base_brightness = int(20 + min(bass * 0.01, 1) * 50)
+    img = np.full((HEIGHT, WIDTH, 3), base_brightness, dtype=np.uint8)
+
+    # === HSV Color shifting: hue based on time or treble
+    hue = int((t * 30 + treb * 0.01) % 180)
+    color_hsv = np.uint8([[[hue, 255, 255]]])  # full saturation, value
+    core_color = cv2.cvtColor(color_hsv, cv2.COLOR_HSV2BGR)[0][0].tolist()
+
+    # === Radii based on smoothed energy
     scale = lambda v: int(np.clip(v * 0.015, 0, 1) * 250)
-
-    # Radii based on frequency energy
     bass_radius = scale(bass) + 50
     mid_radius = bass_radius + scale(mid)
-    treb_radius = mid_radius + scale(treble)
+    treb_radius = mid_radius + scale(treb)
 
-    # Color layers (BGR format)
-    bass_color = (60, 60, 255)   # Reddish
-    mid_color = (60, 255, 60)    # Green
-    treb_color = (255, 60, 255)  # Magenta
-
+    # === Helper to draw smooth glowing circles
     def draw_filled_circle(img, center, radius, color, alpha):
         overlay = img.copy()
         cv2.circle(overlay, center, radius, color, thickness=-1)
         return cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
 
-    # Draw concentric circles from outermost to innermost for layering
-    img = draw_filled_circle(img, CENTER, treb_radius, treb_color, 0.25)
-    img = draw_filled_circle(img, CENTER, mid_radius, mid_color, 0.4)
-    img = draw_filled_circle(img, CENTER, bass_radius, bass_color, 0.6)
+    # === Draw blended concentric glow layers
+    img = draw_filled_circle(img, CENTER, treb_radius, core_color, 0.2)
+    img = draw_filled_circle(img, CENTER, mid_radius, core_color, 0.35)
+    img = draw_filled_circle(img, CENTER, bass_radius, core_color, 0.5)
 
-    # Optional glow around everything
-    glow_radius = treb_radius + 20
-    img = draw_filled_circle(img, CENTER, glow_radius, (100, 100, 255), 0.08)
+    # Optional: soft outer glow
+    glow_radius = treb_radius + 30
+    img = draw_filled_circle(img, CENTER, glow_radius, core_color, 0.05)
 
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
 
 # === Generate Video ===
 audioclip = AudioFileClip(INPUT_PATH)
