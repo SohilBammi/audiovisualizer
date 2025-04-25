@@ -44,7 +44,7 @@ def get_energies(frame_idx):
 frame_amplitudes = librosa.util.frame(y, frame_length=samples_per_frame, hop_length=samples_per_frame)
 waveform_amplitude = np.mean(np.abs(frame_amplitudes), axis=0)
 
-# # === Frame Generator ===
+# === Frame Generator ===
 def make_frame(t):
     frame_idx = int(t * FPS)
     bass, mid, treble = get_energies(frame_idx)
@@ -53,18 +53,34 @@ def make_frame(t):
     img = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
 
     # Normalize
-    scale = lambda v: int(np.clip(v * 0.015, 0, 1) * 300)
+    scale = lambda v: int(np.clip(v * 0.015, 0, 1) * 250)
 
-    # === Bouncing Circles ===
-    bass_radius = 80 + scale(bass)
-    mid_radius = 60 + scale(mid)
-    treb_radius = 40 + scale(treble)
+    # === Dynamic Radii ===
+    bass_radius = scale(bass) + 50
+    mid_radius = bass_radius + scale(mid)
+    treb_radius = mid_radius + scale(treble)
 
-    cv2.circle(img, CENTER, bass_radius, (255, 50, 50), thickness=5)
-    cv2.circle(img, (CENTER[0] - 300, CENTER[1]), mid_radius, (50, 255, 50), thickness=3)
-    cv2.circle(img, (CENTER[0] + 300, CENTER[1]), treb_radius, (50, 100, 255), thickness=3)
+    # === Gradient Colors (BGR)
+    bass_color = (60, 60, 255)    # Red-ish (Bass)
+    mid_color  = (60, 255, 60)    # Greenish (Mids)
+    treb_color = (255, 60, 255)   # Magenta-ish (Treble)
 
-    # === Waveform Line ===
+    # Helper to blend circle edges for smoother feel
+    def draw_filled_circle(img, center, radius, color, alpha):
+        overlay = img.copy()
+        cv2.circle(overlay, center, radius, color, thickness=-1)
+        return cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
+
+    # === Draw Gradient Concentric Circles from Inside Out ===
+    img = draw_filled_circle(img, CENTER, treb_radius, treb_color, 0.25)
+    img = draw_filled_circle(img, CENTER, mid_radius, mid_color, 0.4)
+    img = draw_filled_circle(img, CENTER, bass_radius, bass_color, 0.6)
+
+    # === Optional: Subtle outer glow
+    glow_radius = treb_radius + 20
+    img = draw_filled_circle(img, CENTER, glow_radius, (100, 100, 255), 0.08)
+
+    # === Waveform Trail ===
     wave_y = int(HEIGHT * 0.85)
     wave_scale = 300
     step = WIDTH // 100
@@ -76,7 +92,7 @@ def make_frame(t):
         x2 = WIDTH - (i + 1) * step
         y1 = wave_y - int(amp1)
         y2 = wave_y - int(amp2)
-        cv2.line(img, (x1, y1), (x2, y2), (200, 200, 255), thickness=2)
+        cv2.line(img, (x1, y1), (x2, y2), (180, 180, 255), thickness=2)
 
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
